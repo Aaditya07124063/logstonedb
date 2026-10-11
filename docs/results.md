@@ -12,6 +12,15 @@
   on the local macOS filesystem target, `os.File.Sync` uses `F_FULLFSYNC`.
 
 Relevant source from
+`/opt/homebrew/Cellar/go/1.27.2/libexec/src/os/file_posix.go`:
+
+```go
+if e := f.pfd.Fsync(); e != nil {
+	return f.wrapErr("sync", e)
+}
+```
+
+The Darwin-specific implementation is in
 `/opt/homebrew/Cellar/go/1.27.2/libexec/src/internal/poll/fd_fsync_darwin.go`:
 
 ```go
