@@ -22,5 +22,6 @@
 | F-3 | Final | Test missing PUT(w,1); audit counter location | — | Fixed history; simulator-owned audit log | testing.md §5, §6.4 |
 | F-4 | Final | Days 1–2 must not build full fakefs | — | Deferred to Weeks 3, 14–16 | roadmap.md §1–2 |
 | M0-1 | Milestone 0 fixes | Shell boundary check could pass after `go list`/`rg` errors, missed `math/rand/v2` and test-file imports, and `make check` omitted linking. | High | Replaced with a stdlib AST checker that fails closed; fixture tests cover all reported violations; `make check` now builds first. | tools/checkraft; Makefile |
+| M1-1 | Milestone 1 review fixes | Random campaigns rarely exercised multiple leader terms, freshness checks missed ordering cases, stale heartbeats did not reply, and virtual time advanced once per node. | High | Weighted the deterministic campaign scheduler, added campaign-coverage floors and stats, table-driven `Step` freshness tests with three mutants, stale-heartbeat replies, healed-partition assertions, and round-based virtual time. | internal/raft; internal/simulation; tests/sim; results.md |
 
 **Status:** historical architecture resolutions remain design-level unless later executable evidence is recorded. Milestone 0 boundary verification is covered by M0-1.

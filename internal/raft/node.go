@@ -149,6 +149,12 @@ func (n *Node) handleRequestVoteResp(message Message, output Output) Output {
 
 func (n *Node) handleHeartbeat(message Message, output Output) Output {
 	if message.Term < n.term {
+		output.Msgs = append(output.Msgs, Message{
+			Type: HeartbeatResp,
+			From: n.id,
+			To:   message.From,
+			Term: n.term,
+		})
 		return output
 	}
 	if message.Term == n.term && n.role != Follower {
@@ -187,14 +193,8 @@ func (n *Node) becomeFollower(term uint64) {
 }
 
 func (n *Node) candidateUpToDate(message Message) bool {
-	if !useLogFreshness() {
-		return true
-	}
 	lastIndex, lastTerm := n.lastLog()
-	if message.LastLogTerm != lastTerm {
-		return message.LastLogTerm > lastTerm
-	}
-	return message.LastLogIndex >= lastIndex
+	return candidateLogUpToDate(lastIndex, lastTerm, message.LastLogIndex, message.LastLogTerm)
 }
 
 func (n *Node) persistent() *Persistent {

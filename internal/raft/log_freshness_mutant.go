@@ -3,4 +3,4 @@
 
 package raft
 
-func useLogFreshness() bool { return false }
+func candidateLogUpToDate(_, _, _, _ uint64) bool { return true }

@@ -45,6 +45,11 @@ Heartbeat messages, durable term/vote/log outputs, voting freshness, virtual
 time, message faults, crash/restart, partitions, trace hashing, and an
 ElectionSafety checker after every event.
 
+One simulator tick is a 100 ms virtual-time scheduler round. `TickAll`
+advances virtual time once for the round, then invokes each live node in
+sorted node-ID order at that same timestamp. A targeted `Tick` is one
+single-node virtual-time round and also advances virtual time by 100 ms.
+
 ### Persistence model
 
 For every node output, the simulator records `Output.Persist` as the node's
@@ -59,7 +64,23 @@ Log replication, AppendEntries, commit advancement, applying entries, snapshots,
 PreVote, CheckQuorum, client requests, production networking, and storage are
 not implemented in this milestone.
 
-### Commands and raw results
+### M1-1 review remediation
+
+The random scheduler selects tick events 45% of the time and delivery events
+30% of the time. Its remaining events are drop 4%, duplicate 4%, reorder 4%,
+crash 3%, restart 2%, partition 3%, and heal 5%. The M1-1 1,000-seed,
+2,000-step campaign measured 998/1000 (99.8%) runs with leaders in at least
+two terms and 1000/1000 (100.0%) with a crash after a leader was observed.
+The tests fail below 80% and 50%, respectively.
+
+`CampaignStats` exposes distinct `(term, leader)` pairs, distinct leader
+terms, total crashes, and crashes after a leader. The freshness tests exercise
+RequestVote through `Node.Step`; the three ordering mutants and the existing
+no-freshness mutant fail those cases. A stale heartbeat now replies with the
+receiver's current term, and a leader steps down when it receives a
+higher-term heartbeat response.
+
+### Commands and raw results (initial implementation)
 
 ```text
 $ make check

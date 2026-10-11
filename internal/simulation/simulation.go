@@ -32,6 +32,14 @@ type NodeState struct {
 	State raft.State
 }
 
+// CampaignStats summarizes election and fault activity in a completed run.
+type CampaignStats struct {
+	DistinctLeaderPairs int
+	DistinctLeaderTerms int
+	Crashes             int
+	CrashesAfterLeader  int
+}
+
 type slot struct {
 	id      uint64
 	node    *raft.Node
@@ -55,16 +63,18 @@ type leaderRecord struct {
 
 // Simulator owns virtual time, fault scheduling, network delivery, and RNG.
 type Simulator struct {
-	seed      int64
-	nowMS     uint64
-	step      uint64
-	rng       *randomSource
-	slots     []slot
-	queue     []queuedMessage
-	blocked   []blockedLink
-	leaders   []leaderRecord
-	trace     []string
-	violation error
+	seed               int64
+	nowMS              uint64
+	step               uint64
+	rng                *randomSource
+	slots              []slot
+	queue              []queuedMessage
+	blocked            []blockedLink
+	leaders            []leaderRecord
+	crashes            int
+	crashesAfterLeader int
+	trace              []string
+	violation          error
 }
 
 // New creates a deterministic election simulator.
@@ -92,13 +102,17 @@ func New(seed int64, config Config) *Simulator {
 	return sim
 }
 
-// Tick advances one node's virtual Raft timer.
+// Tick advances one targeted virtual-time round and one node's Raft timer.
 func (s *Simulator) Tick(id uint64) bool {
+	s.nowMS += 100
+	return s.tick(id)
+}
+
+func (s *Simulator) tick(id uint64) bool {
 	index := s.indexOf(id)
 	if index < 0 || !s.slots[index].alive || s.violation != nil {
 		return false
 	}
-	s.nowMS += 100
 	output := s.slots[index].node.Tick()
 	s.applyOutput(index, output)
 	state := s.slots[index].node.State()
@@ -108,11 +122,15 @@ func (s *Simulator) Tick(id uint64) bool {
 
 // TickAll advances every live node in sorted node-ID order.
 func (s *Simulator) TickAll() {
+	if s.violation != nil {
+		return
+	}
+	s.nowMS += 100
 	for _, current := range s.slots {
 		if s.violation != nil {
 			return
 		}
-		s.Tick(current.id)
+		s.tick(current.id)
 	}
 }
 
@@ -159,6 +177,10 @@ func (s *Simulator) Crash(id uint64) bool {
 	}
 	s.slots[index].node = nil
 	s.slots[index].alive = false
+	s.crashes++
+	if len(s.leaders) > 0 {
+		s.crashesAfterLeader++
+	}
 	s.record(id, "crash", id, 0, s.slots[index].durable.Term, "durable_state_retained")
 	return true
 }
@@ -249,6 +271,39 @@ func (s *Simulator) Error() error {
 	return s.violation
 }
 
+// Stats returns deterministic campaign coverage statistics.
+func (s *Simulator) Stats() CampaignStats {
+	terms := make([]uint64, 0, len(s.leaders))
+	for _, leader := range s.leaders {
+		known := false
+		for _, term := range terms {
+			if term == leader.term {
+				known = true
+				break
+			}
+		}
+		if !known {
+			terms = append(terms, leader.term)
+		}
+	}
+	return CampaignStats{
+		DistinctLeaderPairs: len(s.leaders),
+		DistinctLeaderTerms: len(terms),
+		Crashes:             s.crashes,
+		CrashesAfterLeader:  s.crashesAfterLeader,
+	}
+}
+
+// HasLeaderInTerm reports whether a leader was observed in the given term.
+func (s *Simulator) HasLeaderInTerm(term uint64) bool {
+	for _, leader := range s.leaders {
+		if leader.term == term {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Simulator) newNode(id uint64, persistent raft.Persistent) *raft.Node {
 	return raft.NewNode(raft.Config{
 		ID:         id,
@@ -281,28 +336,28 @@ func (s *Simulator) deliverAt(queueIndex int) {
 }
 
 func (s *Simulator) randomEvent() {
-	switch s.rng.Intn(9) {
-	case 0:
+	switch draw := s.rng.Intn(100); {
+	case draw < 45:
 		s.randomTick()
-	case 1:
+	case draw < 75:
 		if len(s.queue) == 0 {
 			s.randomTick()
 			return
 		}
 		s.deliverAt(s.rng.Intn(len(s.queue)))
-	case 2:
+	case draw < 79:
 		s.randomDrop()
-	case 3:
+	case draw < 83:
 		s.randomDuplicate()
-	case 4:
+	case draw < 87:
 		s.randomReorder()
-	case 5:
+	case draw < 90:
 		s.randomCrash()
-	case 6:
+	case draw < 92:
 		s.randomRestart()
-	case 7:
+	case draw < 95:
 		s.randomPartition()
-	case 8:
+	default:
 		s.Heal()
 	}
 }

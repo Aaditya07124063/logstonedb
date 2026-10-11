@@ -33,23 +33,89 @@ func TestSIM_E02_ForcedSplitVote(t *testing.T) {
 	if term < 2 {
 		t.Fatalf("leader term = %d, want term advanced after split vote", term)
 	}
+	if sim.HasLeaderInTerm(1) {
+		t.Fatal("a node became leader in term 1 during the forced split vote")
+	}
 }
 
-func TestSIM_E03_StaleLogCandidateNeverWins(t *testing.T) {
-	fresh := []simulation.InitialNode{
-		{ID: 2, Persistent: raft.Persistent{Log: []raft.Entry{{Index: 2, Term: 2}}}},
-		{ID: 3, Persistent: raft.Persistent{Log: []raft.Entry{{Index: 2, Term: 2}}}},
+func TestSIM_E03_LogFreshnessVoting(t *testing.T) {
+	localLog := []raft.Entry{{Index: 5, Term: 4}}
+	cases := []struct {
+		name           string
+		candidateIndex uint64
+		candidateTerm  uint64
+		wantGranted    bool
+	}{
+		{name: "lower last term longer log", candidateIndex: 6, candidateTerm: 3, wantGranted: false},
+		{name: "higher last term shorter log", candidateIndex: 4, candidateTerm: 5, wantGranted: true},
+		{name: "equal last term shorter log", candidateIndex: 4, candidateTerm: 4, wantGranted: false},
+		{name: "equal last term equal log", candidateIndex: 5, candidateTerm: 4, wantGranted: true},
+		{name: "equal last term longer log", candidateIndex: 6, candidateTerm: 4, wantGranted: true},
 	}
-	sim := newSimulation(3, []int{0, 9, 9}, fresh)
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			node := raft.NewNode(raft.Config{
+				ID:    2,
+				Peers: []uint64{1, 3},
+				Rand:  fixedRand{},
+				Persistent: raft.Persistent{
+					Term: 3,
+					Log:  localLog,
+				},
+			})
+			output := node.Step(raft.Message{
+				Type:         raft.RequestVote,
+				From:         1,
+				To:           2,
+				Term:         3,
+				LastLogIndex: test.candidateIndex,
+				LastLogTerm:  test.candidateTerm,
+			})
+			if len(output.Msgs) != 1 || output.Msgs[0].Type != raft.RequestVoteResp {
+				t.Fatalf("Step output = %#v, want one RequestVoteResp", output)
+			}
+			if got := output.Msgs[0].VoteGranted; got != test.wantGranted {
+				t.Fatalf("vote granted = %t, want %t", got, test.wantGranted)
+			}
+		})
+	}
+}
+
+func TestHeartbeatHigherTermReplyStepsDownLeader(t *testing.T) {
+	node := raft.NewNode(raft.Config{ID: 1, Peers: []uint64{2, 3}, Rand: fixedRand{}})
 	for tick := 0; tick < 10; tick++ {
-		sim.Tick(1)
+		node.Tick()
 	}
-	sim.DeliverAll()
-	if err := sim.Error(); err != nil {
-		t.Fatalf("ElectionSafety failed: %v", err)
+	node.Step(raft.Message{Type: raft.RequestVoteResp, From: 2, To: 1, Term: 1, VoteGranted: true})
+	if state := node.State(); state.Role != raft.Leader || state.Term != 1 {
+		t.Fatalf("precondition state = role %s term %d, want leader term 1", state.Role, state.Term)
 	}
-	if state := nodeState(t, sim, 1); state.State.Role == raft.Leader {
-		t.Fatalf("stale candidate became leader in term %d", state.State.Term)
+
+	output := node.Step(raft.Message{Type: raft.HeartbeatResp, From: 2, To: 1, Term: 2})
+	state := node.State()
+	if state.Role != raft.Follower || state.Term != 2 {
+		t.Fatalf("state after higher-term heartbeat reply = role %s term %d, want follower term 2", state.Role, state.Term)
+	}
+	if output.Persist == nil || output.Persist.Term != 2 {
+		t.Fatalf("persistence output = %#v, want durable term 2", output.Persist)
+	}
+}
+
+func TestStaleHeartbeatRepliesWithCurrentTerm(t *testing.T) {
+	node := raft.NewNode(raft.Config{
+		ID:         2,
+		Peers:      []uint64{1, 3},
+		Rand:       fixedRand{},
+		Persistent: raft.Persistent{Term: 2},
+	})
+	output := node.Step(raft.Message{Type: raft.Heartbeat, From: 1, To: 2, Term: 1})
+	if len(output.Msgs) != 1 {
+		t.Fatalf("stale heartbeat output messages = %#v, want one response", output.Msgs)
+	}
+	reply := output.Msgs[0]
+	if reply.Type != raft.HeartbeatResp || reply.From != 2 || reply.To != 1 || reply.Term != 2 {
+		t.Fatalf("stale heartbeat reply = %#v, want HeartbeatResp from 2 to 1 at term 2", reply)
 	}
 }
 
@@ -84,17 +150,56 @@ func TestSIM_E04_PartitionLeader(t *testing.T) {
 	if oldState.State.Role != raft.Leader || oldState.State.Term != oldTerm {
 		t.Fatalf("old leader state = role %s term %d, want leader in old term %d", oldState.State.Role, oldState.State.Term, oldTerm)
 	}
+
+	sim.Heal()
+	if err := sim.RunNoFault(50); err != nil {
+		t.Fatalf("ElectionSafety failed after heal: %v", err)
+	}
+	leaders := 0
+	for _, state := range sim.Nodes() {
+		if state.Alive && state.State.Role == raft.Leader {
+			leaders++
+		}
+	}
+	if leaders != 1 {
+		t.Fatalf("leaders after heal = %d, want exactly one", leaders)
+	}
+	oldState = nodeState(t, sim, oldLeader)
+	if oldState.State.Role != raft.Follower {
+		t.Fatalf("old leader role after heal = %s, want follower", oldState.State.Role)
+	}
+	if oldState.State.Term < majorityLeader.State.Term {
+		t.Fatalf("old leader term after heal = %d, want >= new leader term %d", oldState.State.Term, majorityLeader.State.Term)
+	}
 }
 
 func TestSIM_E05_CrashRestartAroundVoting(t *testing.T) {
 	if err := doubleVoteScenario(); err != nil {
 		t.Fatalf("scripted crash/restart scenario: %v", err)
 	}
-	for seed := int64(1); seed <= 1000; seed++ {
+	const campaigns = 1000
+	const steps = 2000
+	leadersInTwoTerms := 0
+	crashAfterLeader := 0
+	for seed := int64(1); seed <= campaigns; seed++ {
 		sim := newSimulation(seed, nil, nil)
-		if err := sim.RunRandom(200); err != nil {
+		if err := sim.RunRandom(steps); err != nil {
 			t.Fatalf("seed %d: ElectionSafety failed: %v", seed, err)
 		}
+		stats := sim.Stats()
+		if stats.DistinctLeaderTerms >= 2 {
+			leadersInTwoTerms++
+		}
+		if stats.CrashesAfterLeader > 0 {
+			crashAfterLeader++
+		}
+	}
+	logCoverage(t, campaigns, leadersInTwoTerms, crashAfterLeader)
+	if leadersInTwoTerms*100 < campaigns*80 {
+		t.Fatalf("leaders in at least two terms = %d/%d, want at least 80%%", leadersInTwoTerms, campaigns)
+	}
+	if crashAfterLeader*100 < campaigns*50 {
+		t.Fatalf("crash after leader = %d/%d, want at least 50%%", crashAfterLeader, campaigns)
 	}
 }
 
@@ -102,16 +207,36 @@ func TestSIM_D01_Determinism(t *testing.T) {
 	for seed := int64(1); seed <= 1000; seed++ {
 		first := newSimulation(seed, nil, nil)
 		second := newSimulation(seed, nil, nil)
-		if err := first.RunRandom(300); err != nil {
+		if err := first.RunRandom(2000); err != nil {
 			t.Fatalf("seed %d first run: %v", seed, err)
 		}
-		if err := second.RunRandom(300); err != nil {
+		if err := second.RunRandom(2000); err != nil {
 			t.Fatalf("seed %d second run: %v", seed, err)
 		}
 		if first.Hash() != second.Hash() {
 			t.Fatalf("seed %d hash mismatch: %s != %s", seed, first.Hash(), second.Hash())
 		}
+		if first.Stats() != second.Stats() {
+			t.Fatalf("seed %d stats mismatch: %#v != %#v", seed, first.Stats(), second.Stats())
+		}
 	}
+}
+
+type fixedRand struct{}
+
+func (fixedRand) Intn(n int) int { return 0 }
+
+func logCoverage(t *testing.T, campaigns, leadersInTwoTerms, crashAfterLeader int) {
+	t.Helper()
+	t.Logf(
+		"campaign coverage: leaders in >=2 terms = %d/%d (%.1f%%); crash after leader = %d/%d (%.1f%%)",
+		leadersInTwoTerms,
+		campaigns,
+		float64(leadersInTwoTerms)*100/float64(campaigns),
+		crashAfterLeader,
+		campaigns,
+		float64(crashAfterLeader)*100/float64(campaigns),
+	)
 }
 
 func newSimulation(seed int64, timeoutScript []int, initial []simulation.InitialNode) *simulation.Simulator {
