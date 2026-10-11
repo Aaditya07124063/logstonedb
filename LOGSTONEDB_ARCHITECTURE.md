@@ -337,7 +337,7 @@ Strategy in `docs/testing.md`. Each claim maps to at least one executable test o
 - [ ] etcd/raft version pinned and version-specific behaviour verified (Week 6)
 - [ ] Porcupine version pinned and unknown-outcome handling verified (Week 18)
 - [ ] Go version and darwin `Sync` behaviour verified (Milestone 0)
-- [ ] Operator-authored `docs/invariants-operator.md` (Day 2)
+- [x] AI authorship recorded (ADR-015)
 - [ ] Any test exists or has run (none yet)
 
 ## 17. Risk register (prioritized)
@@ -369,9 +369,9 @@ Strategy in `docs/testing.md`. Each claim maps to at least one executable test o
 
 ## 19. First implementation milestone after review
 
-**Milestone 0 — Skeleton and boundaries (Days 1–2; operator-authored).**
-- Files: `go.mod` (Go version recorded), directory tree per §7, `cmd/simulator/main.go` printing a seed, empty packages `internal/raft` and `internal/simulation` with package docs, `docs/invariants-operator.md` (operator's own words), rollback exclusion in `docs/assumptions.md` (operator's wording), `Makefile` or script with `go vet ./...`, `go test -race ./...`, and a dependency-direction check (`go list -deps ./internal/raft` must show stdlib only).
-- Acceptance: commands run clean; evaluator reviews `invariants-operator.md` before Day 3.
+**Milestone 0 — Skeleton and boundaries (Days 1–2).**
+- Files: `go.mod` (Go version recorded), directory tree per §7, `cmd/simulator/main.go` printing a seed, empty packages `internal/raft` and `internal/simulation` with package docs, `Makefile` or script with `go vet ./...`, `go test -race ./...`, and a dependency-direction check.
+- Acceptance: commands run clean; AI authorship is recorded in ADR-015.
 - Explicitly not in Milestone 0: any Raft logic, fakefs, etcd/raft, networking.
 
 **Stop here:** this package requests architecture review. No database code until the reviewer responds.

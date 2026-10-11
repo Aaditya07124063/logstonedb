@@ -123,9 +123,6 @@ func importViolation(path string, isTest, raft bool) string {
 		return fmt.Sprintf("non-standard-library import %q", path)
 	}
 
-	if isTest && path == "testing" {
-		return ""
-	}
 	return ""
 }
 

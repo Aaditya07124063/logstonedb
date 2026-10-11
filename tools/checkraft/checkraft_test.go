@@ -19,6 +19,7 @@ func TestFixtures(t *testing.T) {
 		{name: "math_rand_v2", wantErr: "forbidden import \"math/rand/v2\""},
 		{name: "test_time", wantErr: "forbidden import \"time\""},
 		{name: "raft_imports_simulation", wantErr: "internal/raft must not import internal/simulation"},
+		{name: "simulation_nonstdlib", wantErr: "non-standard-library import \"github.com/example/nonstdlib\""},
 		{name: "unparsable", wantErr: "parse error"},
 	}
 

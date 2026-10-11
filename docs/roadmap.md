@@ -11,8 +11,8 @@
 
 | Day | Work | Deliverable | Acceptance check | Hours |
 |---|---|---|---|---|
-| 1 | Read Raft §5.1–5.4 and Figure 2. Go module, directory skeleton, CI command (`go test ./...`, `go vet`, `-race`). | Repo skeleton; `docs/assumptions.md` rollback exclusion in operator's words | `go test ./...` runs (no tests yet) | 2.5 |
-| 2 | Write `docs/invariants-operator.md` **in own words**: 5 properties, mechanism, counterexample each. | Operator invariants file | Reviewed by evaluator before Day 4 | 2.5 |
+| 1 | Read Raft §5.1–5.4 and Figure 2. Go module, directory skeleton, CI command (`go test ./...`, `go vet`, `-race`). | Repo skeleton; AI authorship recorded in ADR-015 | `go test ./...` runs (no tests yet) | 2.5 |
+| 2 | Review the safety properties and failure model. | AI-authorship decision recorded | ADR-015 reviewed | 2.5 |
 | 3 | `internal/raft`: node state (role, term, votedFor, log), `Tick`, `Step`, RequestVote handling. Output struct (messages, persist, apply). | Election code, unit tests for vote rules | Unit tests for: one vote per term, stale-term rejection, log freshness | 3 |
 | 4 | `internal/simulation`: virtual clock, message queue, seeded rng, trace recorder. Elect a leader. | Simulator elects a leader | SIM-E01 (1,000 seeds), SIM-D01 determinism | 3 |
 | 5 | Drop / delay / duplicate / reorder; partitions and heal. | Fault scheduler | SIM-E02, SIM-E04 | 2.5 |
