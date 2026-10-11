@@ -4,10 +4,26 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+
+	"github.com/Aaditya07124063/logstonedb/internal/simulation"
 )
 
 func main() {
-	seed := flag.Uint64("seed", 1, "seed for deterministic simulation")
+	seed := flag.Int64("seed", 1, "seed for deterministic simulation")
+	steps := flag.Int("steps", 100, "number of deterministic simulation events")
 	flag.Parse()
-	fmt.Printf("seed=%d\n", *seed)
+
+	sim := simulation.New(*seed, simulation.Config{NodeIDs: []uint64{1, 2, 3}})
+	if err := sim.RunRandom(*steps); err != nil {
+		for _, line := range sim.Trace() {
+			fmt.Println(line)
+		}
+		fmt.Fprintf(os.Stderr, "simulation failed: %v\n", err)
+		os.Exit(1)
+	}
+	for _, line := range sim.Trace() {
+		fmt.Println(line)
+	}
+	fmt.Printf("trace_sha256=%s\n", sim.Hash())
 }

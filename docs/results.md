@@ -34,3 +34,142 @@ if err != nil && errors.Is(err, syscall.ENOTSUP) {
 	err = syscall.Fsync(fd.Sysfd)
 }
 ```
+
+## Milestone 1 verification
+
+Implemented an educational, election-only Raft model in `internal/raft` and a
+single-threaded deterministic simulator in `internal/simulation`. The model
+implements follower/candidate/leader roles, randomized 10–19 tick election
+timeouts supplied by the simulation, one-tick heartbeats, RequestVote and
+Heartbeat messages, durable term/vote/log outputs, voting freshness, virtual
+time, message faults, crash/restart, partitions, trace hashing, and an
+ElectionSafety checker after every event.
+
+### Persistence model
+
+For every node output, the simulator records `Output.Persist` as the node's
+durable `{Term, VotedFor, Log}` **before** enqueueing any `Output.Msgs`. A
+crash discards all volatile node state and retains only that latest recorded
+value. Restart recreates the node as a follower from that durable value. This
+is a stage-specific simulation model, not a filesystem durability model.
+
+### Not implemented
+
+Log replication, AppendEntries, commit advancement, applying entries, snapshots,
+PreVote, CheckQuorum, client requests, production networking, and storage are
+not implemented in this milestone.
+
+### Commands and raw results
+
+```text
+$ make check
+go build ./...
+go vet ./...
+go test -race ./...
+?   	github.com/Aaditya07124063/logstonedb/bench	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/cmd/logstonedb	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/cmd/simulator	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/api	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/checker	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/consensus	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/dbsim	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/metrics	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/raft	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/server	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/simulation	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/sm	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/storage	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/storage/fakefs	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/storage/fs	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/storage/meta	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/storage/snap	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/storage/wal	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/internal/transport	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/pkg/client	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/tests/dbsim	[no test files]
+?   	github.com/Aaditya07124063/logstonedb/tests/integration	[no test files]
+ok  	github.com/Aaditya07124063/logstonedb/tests/sim	(cached)
+ok  	github.com/Aaditya07124063/logstonedb/tools/checkraft	(cached)
+go run ./tools/checkraft
+raft boundaries verified
+```
+
+```text
+$ go test -v ./tests/sim -run 'SIM|E0|D01'
+=== RUN   TestSIM_E01_NoFaultElection
+--- PASS: TestSIM_E01_NoFaultElection (0.31s)
+=== RUN   TestSIM_E02_ForcedSplitVote
+--- PASS: TestSIM_E02_ForcedSplitVote (0.00s)
+=== RUN   TestSIM_E03_StaleLogCandidateNeverWins
+--- PASS: TestSIM_E03_StaleLogCandidateNeverWins (0.00s)
+=== RUN   TestSIM_E04_PartitionLeader
+--- PASS: TestSIM_E04_PartitionLeader (0.00s)
+=== RUN   TestSIM_E05_CrashRestartAroundVoting
+--- PASS: TestSIM_E05_CrashRestartAroundVoting (0.05s)
+=== RUN   TestSIM_D01_Determinism
+--- PASS: TestSIM_D01_Determinism (0.17s)
+PASS
+ok  	github.com/Aaditya07124063/logstonedb/tests/sim	0.941s
+```
+
+```text
+$ go test -tags mutant_vote_not_persisted ./tests/sim
+--- FAIL: TestSIM_E05_CrashRestartAroundVoting (0.00s)
+    election_test.go:91: scripted crash/restart scenario: ElectionSafety violation: leaders 1 and 3 in term 1; seed=5; trace tail:
+        step=25 t=2000 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=26 t=2100 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=27 t=2200 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=28 t=2300 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=29 t=2400 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=30 t=2500 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=31 t=2600 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=32 t=2700 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=33 t=2800 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=9
+        step=34 t=2900 node=3 ev=tick from=0 to=3 term=1 detail=candidate rng=0
+        step=35 t=2900 node=2 ev=deliver from=3 to=2 term=1 detail=request_vote rng=7
+        step=36 t=2900 node=3 ev=deliver from=2 to=3 term=1 detail=request_vote_resp rng=7
+--- FAIL: TestSIM_D01_Determinism (0.10s)
+    election_test.go:106: seed 583 first run: ElectionSafety violation: leaders 2 and 3 in term 1; seed=583; trace tail:
+        step=216 t=10000 node=0 ev=partition from=0 to=0 term=0 detail=links_blocked rng=1
+        step=217 t=10000 node=0 ev=restart from=0 to=0 term=0 detail=no_crashed_node rng=6
+        step=218 t=10100 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=2
+        step=219 t=10200 node=3 ev=tick from=0 to=3 term=0 detail=follower rng=2
+        step=220 t=10300 node=3 ev=tick from=0 to=3 term=1 detail=candidate rng=9
+        step=221 t=10300 node=0 ev=heal from=0 to=0 term=0 detail=all_links_restored rng=8
+        step=222 t=10300 node=1 ev=deliver from=3 to=1 term=1 detail=request_vote rng=0
+        step=223 t=10400 node=1 ev=tick from=0 to=1 term=1 detail=follower rng=0
+        step=224 t=10400 node=0 ev=reorder from=0 to=0 term=0 detail=queue_positions_swapped rng=0
+        step=225 t=10400 node=0 ev=restart from=0 to=0 term=0 detail=no_crashed_node rng=6
+        step=226 t=10400 node=2 ev=drop from=3 to=2 term=1 detail=request_vote rng=0
+        step=227 t=10400 node=3 ev=deliver from=1 to=3 term=1 detail=request_vote_resp rng=0
+FAIL
+FAIL	github.com/Aaditya07124063/logstonedb/tests/sim	0.823s
+FAIL
+```
+
+```text
+$ go test -tags mutant_no_log_freshness ./tests/sim
+--- FAIL: TestSIM_E03_StaleLogCandidateNeverWins (0.00s)
+    election_test.go:52: stale candidate became leader in term 1
+FAIL
+FAIL	github.com/Aaditya07124063/logstonedb/tests/sim	0.933s
+FAIL
+```
+
+```text
+$ go run ./cmd/simulator -seed 7 -steps 300 | tail -5
+step=297 t=13900 node=3 ev=crash from=3 to=0 term=1 detail=durable_state_retained rng=0
+step=298 t=13900 node=3 ev=restart from=0 to=3 term=1 detail=durable_state_restored rng=6
+step=299 t=14000 node=3 ev=tick from=0 to=3 term=1 detail=follower rng=0
+step=300 t=14000 node=0 ev=heal from=0 to=0 term=0 detail=all_links_restored rng=8
+trace_sha256=5a45ace2760d904f338b94ea198a29cd449d26504f4109f2e55c444a1f054bfa
+```
+
+```text
+$ go run ./cmd/simulator -seed 7 -steps 300 | tail -5
+step=297 t=13900 node=3 ev=crash from=3 to=0 term=1 detail=durable_state_retained rng=0
+step=298 t=13900 node=3 ev=restart from=0 to=3 term=1 detail=durable_state_restored rng=6
+step=299 t=14000 node=3 ev=tick from=0 to=3 term=1 detail=follower rng=0
+step=300 t=14000 node=0 ev=heal from=0 to=0 term=0 detail=all_links_restored rng=8
+trace_sha256=5a45ace2760d904f338b94ea198a29cd449d26504f4109f2e55c444a1f054bfa
+```
