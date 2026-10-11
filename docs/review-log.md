@@ -21,5 +21,6 @@
 | F-2 | Final | Storage contract must be executable | — | fakefs specification | storage.md §10 |
 | F-3 | Final | Test missing PUT(w,1); audit counter location | — | Fixed history; simulator-owned audit log | testing.md §5, §6.4 |
 | F-4 | Final | Days 1–2 must not build full fakefs | — | Deferred to Weeks 3, 14–16 | roadmap.md §1–2 |
+| M0-1 | Milestone 0 fixes | Shell boundary check could pass after `go list`/`rg` errors, missed `math/rand/v2` and test-file imports, and `make check` omitted linking. | High | Replaced with a stdlib AST checker that fails closed; fixture tests cover all reported violations; `make check` now builds first. | tools/checkraft; Makefile |
 
 **Open:** all resolutions above are design-level and **not verified by code**.
